@@ -14,7 +14,6 @@
 ---
 
 ## 安装
-
 本仓库仅提供源码。
 
 推荐做法：把本仓库源码**直接复制到你的工程目录**（例如 `third_party/BinFontLib/`），并确保编译系统会编译其中的 `src/` 目录。
@@ -92,7 +91,7 @@ M5FontPlatform platform;
 BinFontRuntime fontRuntime(&platform);
 
 // 创建渲染器
-M5FontRenderer renderer(&fontRuntime, &display);
+M5FontRenderer renderer(&fontRuntime, &M5.Display);
 ```
 
 ### 2. 加载字体
@@ -150,7 +149,7 @@ Canvas可以显著提升渲染性能（特别是大量文本）：
 
 ```cpp
 // 创建Canvas
-M5Canvas canvas(&M5.EPD);
+M5Canvas canvas(&M5.Display);
 canvas.createSprite(500, 300);
 canvas.fillSprite(TFT_WHITE);
 
@@ -235,7 +234,7 @@ fontRuntime.setUseFixedAdvance(true);
 
 ```cpp
 // 渲染一次常用文本到离屏Canvas
-M5Canvas dummyCanvas(&display);
+M5Canvas dummyCanvas(&M5.Display);
 dummyCanvas.createSprite(100, 50);
 renderer.drawTextToCanvas(dummyCanvas, "常用字符ABC123", 0, 0, 100, 50, false);
 dummyCanvas.deleteSprite();

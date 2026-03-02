@@ -79,7 +79,6 @@ bool buildCpIndexInto(
     size_t (*readFunc)(void*, uint8_t*, size_t),
     bool (*seekFunc)(void*, uint32_t)
 );
-
 // 释放码点索引
 void freeCpIndex(
     int32_t* cpIndex,

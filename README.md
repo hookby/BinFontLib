@@ -44,7 +44,6 @@ BinFontLib/
 ```
 
 ## 快速开始
-
 将本仓库源码复制到你的工程目录中（例如 `third_party/BinFontLib/`），并确保编译系统会编译其中的 `src/` 目录。
 
 ### 1. 包含头文件
@@ -175,5 +174,4 @@ MIT License - 详见 [LICENSE](LICENSE)
 5. 创建Pull Request
 
 ## 致谢
-
 BinFontLib从 EDCBOOK固件的字体生成工具 中抽取而来，感谢梦西游大佬！

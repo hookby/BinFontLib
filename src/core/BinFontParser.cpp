@@ -71,7 +71,6 @@ bool buildCpIndexInto(
     for (size_t i = 0; i < outMapCount; i++) {
         outMap[i] = -1;
     }
-
     // 遍历所有字形，建立映射
     GlyphEntryRaw e{};
     for (uint32_t i = 0; i < header.char_count; i++) {

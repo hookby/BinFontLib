@@ -3,7 +3,6 @@
 5分钟快速上手指南。
 
 ## 安装
-
 本仓库仅提供源码。
 
 推荐做法：把本仓库源码**直接复制到你的工程目录**（例如 `third_party/BinFontLib/`），并确保编译系统会编译其中的 `src/` 目录。
@@ -159,7 +158,6 @@ Serial.printf("耗时: %.2f ms\n", stats.render_us/1000.0f);
 - [移植指南](PORTING.md)
 
 ## 示例代码
-
 查看 [examples/BinTestInteractive/](examples/BinTestInteractive/) 获取完整示例。
 
 ---

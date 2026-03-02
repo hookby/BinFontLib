@@ -34,7 +34,6 @@ bool BinFontRuntime::loadFont(const char* path) {
                       "Failed to open font: %s", path);
         return false;
     }
-    
     // 包装平台函数指针
     auto platformRead = [](void* ctx, uint8_t* buf, size_t sz) -> size_t {
         void** handles = (void**)ctx;
@@ -57,7 +56,7 @@ bool BinFontRuntime::loadFont(const char* path) {
         _platform->fileClose(handle);
         return false;
     }
-    
+
     // 构建码点索引（使用平台分配器，优先PSRAM）
     const size_t mapCount = 65536;
     const size_t bytes = mapCount * sizeof(int32_t);
