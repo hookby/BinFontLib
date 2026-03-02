@@ -10,7 +10,7 @@
   #define BINFONT_DEC_CACHE_MAX_BYTES (1024u * 1024u)
 #endif
 #ifndef BINFONT_CACHE_MAX_ENTRIES
-  #define BINFONT_CACHE_MAX_ENTRIES 64
+    #define BINFONT_CACHE_MAX_ENTRIES 256
 #endif
 
 struct CacheEntry {
@@ -353,18 +353,19 @@ bool M5FontRenderer::decodeGlyphToNibbles(
     if (!_runtime || !_runtime->isReady()) return false;
     if (!outNibbles || outBytes == 0) return false;
 
-    if (!_runtime->findGlyph(codepoint, outGlyph)) {
-        if (statsOrNull) statsOrNull->glyph_missing++;
-        return false;
-    }
-
-    if (statsOrNull) statsOrNull->glyph_found++;
-
     void* fileHandle = _runtime->openFileHandle();
     if (!fileHandle) {
         if (statsOrNull) statsOrNull->bmp_read_fail++;
         return false;
     }
+
+    if (!_runtime->findGlyphWithHandle(fileHandle, codepoint, outGlyph)) {
+        _runtime->closeFileHandle(fileHandle);
+        if (statsOrNull) statsOrNull->glyph_missing++;
+        return false;
+    }
+
+    if (statsOrNull) statsOrNull->glyph_found++;
 
     IBinFontPlatform* p = _runtime->getPlatform();
     const uint32_t fileSize32 = p ? (uint32_t)p->fileSize(fileHandle) : 0u;
@@ -486,7 +487,7 @@ RenderStats M5FontRenderer::drawText(
         
         // 查找字形
         GlyphEntryRaw glyph{};
-        if (!_runtime->findGlyph(cp, glyph)) {
+        if (!_runtime->findGlyphWithHandle(fileHandle, cp, glyph)) {
             stats.glyph_missing++;
             continue;
         }
@@ -590,7 +591,7 @@ RenderStats M5FontRenderer::drawTextToCanvas(
         }
         
         GlyphEntryRaw glyph{};
-        if (!_runtime->findGlyph(cp, glyph)) {
+        if (!_runtime->findGlyphWithHandle(fileHandle, cp, glyph)) {
             stats.glyph_missing++;
             continue;
         }

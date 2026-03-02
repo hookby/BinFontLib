@@ -31,6 +31,9 @@ public:
     
     // 获取码点索引（可能为nullptr）
     const int32_t* getCpIndex() const { return _cpIndex; }
+
+    // 是否已预加载字形条目表（GlyphEntryRaw[]）
+    bool hasEntryTable() const { return _entries != nullptr; }
     
     // ===== 字符宽度查询 =====
     
@@ -47,6 +50,9 @@ public:
     
     // 查找字形信息
     bool findGlyph(uint16_t codepoint, GlyphEntryRaw& outGlyph);
+
+    // 在调用方已打开文件句柄的前提下查找字形信息（避免每个字形都 open/close 文件）
+    bool findGlyphWithHandle(void* fileHandle, uint16_t codepoint, GlyphEntryRaw& outGlyph);
     
     // 打开字体文件用于读取位图数据
     // 注意：使用完毕后需要调用closeFileHandle关闭
@@ -64,6 +70,7 @@ private:
     char* _path = nullptr;           // 当前字体路径
     FontHeader _header{};            // 字体头信息
     int32_t* _cpIndex = nullptr;     // 码点索引
+    GlyphEntryRaw* _entries = nullptr; // 可选：字形条目表（按index顺序）
     bool _ready = false;             // 是否就绪
     bool _useFixedAdvance = true;    // 是否使用固定宽度
     

@@ -77,6 +77,40 @@ bool BinFontRuntime::loadFont(const char* path) {
         return false;
     }
 
+    // 可选：预加载字形条目表到内存（显著减少每字形 seek+read 的开销）
+    // 失败（OOM/IO）会自动回退到按需读取。
+    if (_header.char_count > 0) {
+        const size_t entriesBytes = (size_t)_header.char_count * sizeof(GlyphEntryRaw);
+        _entries = (GlyphEntryRaw*)_platform->memAlloc(entriesBytes);
+        if (_entries) {
+            const uint32_t t0 = _platform->getMicros();
+            bool ok = platformSeek(context, BINFONT_ENTRY_BASE);
+            size_t remain = entriesBytes;
+            uint8_t* dst = (uint8_t*)_entries;
+            while (ok && remain > 0) {
+                const size_t chunk = (remain > 4096u) ? 4096u : remain;
+                const size_t got = platformRead(context, dst, chunk);
+                if (got != chunk) { ok = false; break; }
+                dst += chunk;
+                remain -= chunk;
+            }
+            const uint32_t dt = _platform->getMicros() - t0;
+
+            if (!ok) {
+                _platform->memFree(_entries);
+                _entries = nullptr;
+                _platform->log(IBinFontPlatform::LOG_WARN, "BinFont",
+                              "Entry table preload failed; fallback to on-demand (%.2f ms)", dt / 1000.0f);
+            } else {
+                _platform->log(IBinFontPlatform::LOG_INFO, "BinFont",
+                              "Entry table preloaded: %u entries, %u KB (%.2f ms)",
+                              (unsigned)_header.char_count,
+                              (unsigned)(entriesBytes / 1024u),
+                              dt / 1000.0f);
+            }
+        }
+    }
+
     _platform->fileClose(handle);
     
     // 保存路径
@@ -100,6 +134,10 @@ void BinFontRuntime::unload() {
     if (_cpIndex) {
         if (_platform) _platform->memFree(_cpIndex);
         _cpIndex = nullptr;
+    }
+    if (_entries) {
+        if (_platform) _platform->memFree(_entries);
+        _entries = nullptr;
     }
     if (_path) {
         free(_path);
@@ -145,9 +183,27 @@ bool BinFontRuntime::findGlyph(uint16_t codepoint, GlyphEntryRaw& outGlyph) {
     
     void* handle = openFileHandle();
     if (!handle) return false;
-    
-    void* context[2] = { _platform, handle };
-    
+
+    const bool found = findGlyphWithHandle(handle, codepoint, outGlyph);
+    closeFileHandle(handle);
+    return found;
+}
+
+bool BinFontRuntime::findGlyphWithHandle(void* fileHandle, uint16_t codepoint, GlyphEntryRaw& outGlyph) {
+    if (!_ready) return false;
+
+    // Fastest path: entry table is in RAM.
+    if (_entries && _cpIndex) {
+        const int32_t idx = _cpIndex[codepoint];
+        if (idx < 0 || (uint32_t)idx >= _header.char_count) return false;
+        outGlyph = _entries[idx];
+        return true;
+    }
+
+    if (!_platform || !fileHandle) return false;
+
+    void* context[2] = { _platform, fileHandle };
+
     auto platformRead = [](void* ctx, uint8_t* buf, size_t sz) -> size_t {
         void** handles = (void**)ctx;
         IBinFontPlatform* platform = (IBinFontPlatform*)handles[0];
@@ -160,12 +216,9 @@ bool BinFontRuntime::findGlyph(uint16_t codepoint, GlyphEntryRaw& outGlyph) {
         void* handle = handles[1];
         return platform->fileSeek(handle, pos);
     };
-    
-    bool found = ::findGlyph(context, _header, codepoint, _cpIndex, 
-                            outGlyph, platformRead, platformSeek);
-    
-    closeFileHandle(handle);
-    return found;
+
+    return ::findGlyph(context, _header, codepoint, _cpIndex,
+                       outGlyph, platformRead, platformSeek);
 }
 
 void* BinFontRuntime::openFileHandle() {
