@@ -4,13 +4,9 @@
 
 ## 安装
 
-```bash
-# PlatformIO
-pio lib install BinFontLib
+本仓库仅提供源码。
 
-# Arduino IDE
-Sketch → Include Library → Add .ZIP Library...
-```
+推荐做法：把本仓库源码**直接复制到你的工程目录**（例如 `third_party/BinFontLib/`），并确保编译系统会编译其中的 `src/` 目录。
 
 ## 最小代码（M5PaperS3 / M5Unified）
 
@@ -18,9 +14,9 @@ Sketch → Include Library → Add .ZIP Library...
 #include <M5Unified.h>
 #include <SD.h>
 
-#include "BinFontLib.h"
-#include "platforms/m5stack/M5FontPlatform.h"
-#include "platforms/m5stack/M5FontRenderer.h"
+#include "third_party/BinFontLib/BinFontLib.h"
+#include "third_party/BinFontLib/platforms/m5stack/M5FontPlatform.h"
+#include "third_party/BinFontLib/platforms/m5stack/M5FontRenderer.h"
 
 // 1) 创建对象
 M5FontPlatform platform;
@@ -164,8 +160,8 @@ Serial.printf("耗时: %.2f ms\n", stats.render_us/1000.0f);
 
 ## 示例代码
 
-查看 [examples/M5PaperS3_Demo/](examples/M5PaperS3_Demo/) 获取完整示例。
+查看 [examples/BinTestInteractive/](examples/BinTestInteractive/) 获取完整示例。
 
 ---
 
-**需要帮助？** 提交 [Issue](https://github.com/yourusername/BinFontLib/issues)
+**需要帮助？** 提交 [Issue](https://github.com/hookby/BinFontLib/issues)

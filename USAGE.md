@@ -15,28 +15,16 @@
 
 ## 安装
 
-### Arduino IDE
+本仓库仅提供源码。
 
-1. 下载BinFontLib库
-2. 在Arduino IDE中：`Sketch` → `Include Library` → `Add .ZIP Library...`
-3. 选择下载的ZIP文件
+推荐做法：把本仓库源码**直接复制到你的工程目录**（例如 `third_party/BinFontLib/`），并确保编译系统会编译其中的 `src/` 目录。
 
-### PlatformIO
+你的代码里按真实相对路径 include，例如：
 
-在`platformio.ini`中添加：
-
-```ini
-lib_deps =
-    BinFontLib
-    M5GFX
-    M5Unified
-```
-
-或从本地路径：
-
-```ini
-lib_deps =
-    file://path/to/BinFontLib
+```cpp
+#include "third_party/BinFontLib/BinFontLib.h"
+#include "third_party/BinFontLib/platforms/m5stack/M5FontPlatform.h"
+#include "third_party/BinFontLib/platforms/m5stack/M5FontRenderer.h"
 ```
 
 ---
@@ -46,17 +34,25 @@ lib_deps =
 ### 最小示例 (M5PaperS3)
 
 ```cpp
-#include <M5EPD.h>
-#include "BinFontLib.h"
+#include <M5Unified.h>
+#include <SD.h>
+
+#include "third_party/BinFontLib/BinFontLib.h"
+#include "third_party/BinFontLib/platforms/m5stack/M5FontPlatform.h"
+#include "third_party/BinFontLib/platforms/m5stack/M5FontRenderer.h"
 
 M5FontPlatform platform;
 BinFontRuntime fontRuntime(&platform);
-M5FontRenderer renderer(&fontRuntime, &M5.EPD);
+M5FontRenderer renderer(&fontRuntime, &M5.Display);
 
 void setup() {
-    M5.begin();
-    M5.EPD.Clear(true);
-    SD.begin();
+    auto cfg = M5.config();
+    M5.begin(cfg);
+
+    if (!SD.begin()) {
+        Serial.println("SD.begin() failed");
+        return;
+    }
     
     // 加载字体
     fontRuntime.loadFont("/fonts/myfont.bin");
@@ -72,8 +68,9 @@ void setup() {
         500, 100,   // width, height
         true        // enableWrap
     );
-    
-    M5.EPD.UpdateFull(UPDATE_MODE_GC16);
+
+    // M5PaperS3 (e-ink) 刷新
+    M5.Display.display();
 }
 
 void loop() {
@@ -343,8 +340,8 @@ M5FontRenderer renderer2(&fontRuntime2, &display);
 **需要帮助？**
 
 - 查看 [examples/](examples/) 目录中的示例代码
-- 提交 [Issue](https://github.com/yourusername/BinFontLib/issues)
-- 阅读 [FAQ](https://github.com/yourusername/BinFontLib/wiki/FAQ)
+- 提交 [Issue](https://github.com/hookby/BinFontLib/issues)
+- 阅读 [FAQ](https://github.com/hookby/BinFontLib/wiki/FAQ)
 
 ---
 

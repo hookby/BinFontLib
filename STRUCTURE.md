@@ -7,14 +7,15 @@
 ```
 BinFontLib/
 ├── README.md                   # 项目主说明文档
+├── IMPORTING.md                # 项目导入说明（复制源码到工程）
 ├── LICENSE                     # MIT许可证
 ├── CHANGELOG.md               # 版本更新日志
 ├── API.md                     # API参考文档
 ├── USAGE.md                   # 使用指南
 ├── PORTING.md                 # 平台移植指南
 ├── .gitignore                 # Git忽略文件
-├── library.json               # PlatformIO库配置
-├── library.properties         # Arduino库配置
+├── library.json               # 元数据（可选）
+├── library.properties         # 元数据（可选）
 ├── BinFontLib.h              # 主头文件（包含所有必要接口）
 │
 ├── src/                       # 核心库源代码
@@ -32,11 +33,14 @@ BinFontLib/
 │   └── m5stack/             # M5Stack平台实现
 │       ├── M5FontPlatform.h # M5Stack平台适配（SD卡、PSRAM等）
 │       ├── M5FontRenderer.h # M5GFX渲染实现
-│       └── M5FontRenderer.cpp
+│       └── (wrapper headers)
 │
 └── examples/                 # 示例代码
-    └── M5PaperS3_Demo/      # M5PaperS3演示
-        └── M5PaperS3_Demo.ino
+  ├── _shared/              # 示例共享实现
+  │   └── BinTestApp.cpp
+  └── BinTestInteractive/   # M5PaperS3 交互式演示
+    ├── BinTestInteractive.ino
+    └── BinTestApp_Shared.cpp
 ```
 
 ## 模块说明
@@ -188,7 +192,7 @@ M5FontRenderer
 - [ ] 所有示例编译通过
 - [ ] 文档完整（README, API, USAGE, PORTING）
 - [ ] 许可证文件存在
-- [ ] library.json和library.properties正确
+- [ ] 文档中的导入方式描述一致（以复制源码到工程为准）
 - [ ] .gitignore包含常见临时文件
 - [ ] CHANGELOG.md更新
 - [ ] 代码格式一致
@@ -206,5 +210,5 @@ M5FontRenderer
 
 ---
 
-**维护者**: Your Name  
+**维护者**: hookby  
 **更新日期**: 2026-03-02

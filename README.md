@@ -45,11 +45,13 @@ BinFontLib/
 
 ## 快速开始
 
+将本仓库源码复制到你的工程目录中（例如 `third_party/BinFontLib/`），并确保编译系统会编译其中的 `src/` 目录。
+
 ### 1. 包含头文件
 
 ```cpp
-#include "BinFontLib.h"
-#include "platforms/m5stack/M5FontPlatform.h"
+#include "third_party/BinFontLib/BinFontLib.h"
+#include "third_party/BinFontLib/platforms/m5stack/M5FontPlatform.h"
 ```
 
 ### 2. 初始化
@@ -174,4 +176,4 @@ MIT License - 详见 [LICENSE](LICENSE)
 
 ## 致谢
 
-BinFontLib从[EasyReader](https://github.com/yourusername/EasyReader)项目中抽取而来，感谢所有贡献者！
+BinFontLib从 EDCBOOK固件的字体生成工具 中抽取而来，感谢梦西游大佬！
