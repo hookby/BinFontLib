@@ -1,0 +1,46 @@
+# 构建和编译
+*.o
+*.a
+*.so
+*.dylib
+*.dll
+*.exe
+
+# Arduino/PlatformIO构建输出
+.pio/
+.pioenvs/
+.piolibdeps/
+build/
+.vscode/
+.clang_complete
+.gcc-flags.json
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# IDE
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# 日志文件
+*.log
+
+# 临时文件
+*.tmp
+*.bak
+*.cache
+
+# 编译数据库
+compile_commands.json
+
+# 测试输出
+test_results/
+coverage/
