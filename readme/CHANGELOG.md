@@ -44,4 +44,4 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - M5GFX (for M5Stack platform)
 - M5Unified (for M5Stack platform)
 
-[1.0.0]: https://github.com/yourusername/BinFontLib/releases/tag/v1.0.0
+[1.0.0]: https://github.com/hookby/BinFontLib/releases/tag/v1.0.0

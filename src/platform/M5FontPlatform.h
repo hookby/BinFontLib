@@ -1,7 +1,7 @@
 #ifndef M5_FONT_PLATFORM_H
 #define M5_FONT_PLATFORM_H
 
-#include "../../src/platform/BinFontPlatform.h"
+#include "BinFontPlatform.h"
 #include <Arduino.h>
 #include <SD.h>
 

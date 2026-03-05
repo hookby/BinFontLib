@@ -1,6 +1,6 @@
 #ifndef BINFONT_APP_EXTERNAL_INCLUDES
-    #include "../../BinTestApp.h"
-    #include "../../BinFontConfig.h"
+    #include <BinTestApp.h>
+    #include <BinFontConfig.h>
 #endif
 
 #include <Arduino.h>
@@ -9,9 +9,7 @@
 #include <M5Unified.h>
 #include <M5GFX.h>
 
-#include "../../BinFontLib.h"
-#include "../../src/platform/M5FontPlatform.h"
-#include "../../src/platform/M5FontRenderer.h"
+#include <BinFontLib.h>
 
 // ===== Globals =====
 static M5FontPlatform platform;
@@ -49,6 +47,10 @@ static ScreenId g_lastDemo = ScreenId::Menu;
 static M5FontRenderer::RenderMode g_mode = M5FontRenderer::RenderMode::Text;
 static bool g_batchEnabled = true;
 
+// Demo options
+static bool g_demoClearWhite = true; // when false, skip forced white fill before demos
+static bool g_largeCache = false;
+
 static uint32_t g_lastTouchMs = 0;
 static bool g_lastTouchState = false;
 static int g_touchX = -1;
@@ -56,6 +58,11 @@ static int g_touchY = -1;
 
 static String g_infoLine1;
 static String g_infoLine2;
+
+static void clearDemoContentIfEnabled() {
+    if (!g_demoClearWhite) return;
+    M5.Display.fillRect(0, HEADER_H, g_screenW, g_screenH - HEADER_H - FOOTER_H, TFT_WHITE);
+}
 
 // Fonts
 static constexpr int MAX_FONTS = BINFONT_MAX_FONTS;
@@ -337,6 +344,48 @@ static void preheatCurrentFont(bool showStatus = true) {
     }
 }
 
+static void prebakeCommon200(bool showStatus = true) {
+    if (!fontRuntime.isReady()) {
+        if (showStatus) drawStatusMessage("字体未就绪");
+        return;
+    }
+
+    if (showStatus) {
+        String msg = "Font: " + baseNameOf(g_fontPath);
+        drawStatusMessage("预烘焙200字...", msg.c_str());
+    }
+
+    uint16_t cps[200];
+    size_t count = 0;
+    const char* cur = BINFONT_COMMON_HANS_TEXT;
+    while (count < (sizeof(cps) / sizeof(cps[0]))) {
+        const uint16_t cp = utf8DecodeNext(cur);
+        if (cp == 0) break;
+        cps[count++] = cp;
+    }
+
+    const uint32_t t0 = micros();
+    RenderStats st = renderer.prebakeGlyphs(cps, count, true);
+    const uint32_t dt = micros() - t0;
+
+    Serial.printf("[prebake200] time=%.2fms req=%u found=%u miss=%u bmpFail=%u decFail=%u bmpBytes=%u decBytes=%u\n",
+                  dt / 1000.0f,
+                  (unsigned)st.glyph_requests,
+                  (unsigned)st.glyph_found,
+                  (unsigned)st.glyph_missing,
+                  (unsigned)st.bmp_read_fail,
+                  (unsigned)st.decode_fail,
+                  (unsigned)st.bmp_cache_bytes,
+                  (unsigned)st.dec_cache_bytes);
+
+    if (showStatus) {
+        char buf[120];
+        snprintf(buf, sizeof(buf), "time=%.1fms found=%u miss=%u", dt / 1000.0f, (unsigned)st.glyph_found, (unsigned)st.glyph_missing);
+        drawStatusMessage("预烘焙完成", buf);
+        delay(400);
+    }
+}
+
 // ===== Screens =====
 static void drawMenu();
 static void runDemo(ScreenId id);
@@ -375,7 +424,20 @@ static void drawMenu() {
     drawButton(x1, y, colW, BTN_H, "清缓存+重载");
 
     y += BTN_H + BTN_GAP;
-    drawButton(x0, y, colW, BTN_H, "字体批量测试");
+    {
+        char clearBuf[32];
+        snprintf(clearBuf, sizeof(clearBuf), "清屏白:%s", g_demoClearWhite ? "On" : "Off");
+        drawButton(x0, y, colW, BTN_H, clearBuf, !g_demoClearWhite);
+    }
+    drawButton(x1, y, colW, BTN_H, "预烘焙200字");
+
+    y += BTN_H + BTN_GAP;
+    {
+        char cacheBuf[32];
+        snprintf(cacheBuf, sizeof(cacheBuf), "缓存:%s", g_largeCache ? "大" : "默认");
+        drawButton(x0, y, colW, BTN_H, cacheBuf, g_largeCache);
+    }
+    drawButton(x1, y, colW, BTN_H, "字体批量测试");
 
     M5.Display.setTextSize(1);
     M5.Display.setCursor(PAD, g_screenH - FOOTER_H - 18);
@@ -398,7 +460,7 @@ static void runDemo(ScreenId id) {
     g_infoLine1 = "";
     g_infoLine2 = "";
 
-    M5.Display.fillRect(0, HEADER_H, g_screenW, g_screenH - HEADER_H - FOOTER_H, TFT_WHITE);
+    clearDemoContentIfEnabled();
     drawHeader();
     drawFooter(true);
     M5.Display.display();
@@ -726,12 +788,31 @@ static void handleClick(int x, int y) {
     if (hit(x, y, x1, yy, colW, BTN_H)) { clearCacheAndReload(true); drawMenu(); return; }
 
     yy += BTN_H + BTN_GAP;
-    if (hit(x, y, x0, yy, colW, BTN_H)) { runBatchTest(); return; }
+    if (hit(x, y, x0, yy, colW, BTN_H)) {
+        g_demoClearWhite = !g_demoClearWhite;
+        drawMenu();
+        return;
+    }
+    if (hit(x, y, x1, yy, colW, BTN_H)) { prebakeCommon200(true); drawMenu(); return; }
+
+    yy += BTN_H + BTN_GAP;
+    if (hit(x, y, x0, yy, colW, BTN_H)) {
+        g_largeCache = !g_largeCache;
+        if (g_largeCache) {
+            // Conservative bump: default(512k/1024k) -> large(1024k/2048k)
+            renderer.setCacheLimits(M5FontRenderer::CacheLimits{1024u * 1024u, 2048u * 1024u}, true);
+        } else {
+            renderer.setCacheLimits(M5FontRenderer::defaultCacheLimits(), true);
+        }
+        drawMenu();
+        return;
+    }
+    if (hit(x, y, x1, yy, colW, BTN_H)) { runBatchTest(); return; }
 }
 
 // ===== Demos =====
 static void demoBasicText() {
-    M5.Display.fillRect(0, HEADER_H, g_screenW, g_screenH - HEADER_H - FOOTER_H, TFT_WHITE);
+    clearDemoContentIfEnabled();
     drawHeader();
     drawFooter(true);
 
@@ -750,7 +831,7 @@ static void demoBasicText() {
 }
 
 static void demoMultilineText() {
-    M5.Display.fillRect(0, HEADER_H, g_screenW, g_screenH - HEADER_H - FOOTER_H, TFT_WHITE);
+    clearDemoContentIfEnabled();
     drawHeader();
     drawFooter(true);
 
@@ -777,7 +858,7 @@ static void demoMultilineText() {
 }
 
 static void demoCanvasRendering() {
-    M5.Display.fillRect(0, HEADER_H, g_screenW, g_screenH - HEADER_H - FOOTER_H, TFT_WHITE);
+    clearDemoContentIfEnabled();
     drawHeader();
     drawFooter(true);
 
@@ -818,7 +899,7 @@ static void demoCanvasRendering() {
 }
 
 static void demoPerformance() {
-    M5.Display.fillRect(0, HEADER_H, g_screenW, g_screenH - HEADER_H - FOOTER_H, TFT_WHITE);
+    clearDemoContentIfEnabled();
     drawHeader();
     drawFooter(true);
 
@@ -884,7 +965,7 @@ static void demoDebugWo() {
     RenderStats stats{};
     const bool ok = renderer.decodeGlyphEntryToNibbles(glyph, nibbles, bytes, &stats);
 
-    M5.Display.fillRect(0, HEADER_H, g_screenW, g_screenH - HEADER_H - FOOTER_H, TFT_WHITE);
+    clearDemoContentIfEnabled();
     drawHeader();
 
     uint16_t grayLut[16];

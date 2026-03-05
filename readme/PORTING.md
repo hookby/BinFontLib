@@ -13,7 +13,7 @@ BinFontLib采用分层架构设计：
 
 ## 步骤1：实现平台接口
 
-创建文件：`platforms/your_platform/YourPlatform.h`
+创建文件：`src/platform/your_platform/YourPlatform.h`
 
 ```cpp
 #include "../../src/platform/BinFontPlatform.h"
@@ -119,7 +119,7 @@ uint32_t YourPlatform::getMicros() {
 
 ## 步骤2：实现渲染接口
 
-创建文件：`platforms/your_platform/YourRenderer.h`
+创建文件：`src/platform/your_platform/YourRenderer.h`
 
 ```cpp
 #include "../../src/platform/BinFontRenderer.h"
@@ -219,8 +219,8 @@ bool YourRenderer::drawGlyphNibblesFast(
 
 ```cpp
 #include "BinFontLib.h"
-#include "platforms/your_platform/YourPlatform.h"
-#include "platforms/your_platform/YourRenderer.h"
+#include "src/platform/your_platform/YourPlatform.h"
+#include "src/platform/your_platform/YourRenderer.h"
 
 YourPlatform platform;
 BinFontRuntime fontRuntime(&platform);
@@ -273,7 +273,7 @@ void setup() {
 
 ## 需要帮助？
 
-- 查看 `platforms/m5stack/` 作为参考实现
+- 查看 `src/platform/` 下的 M5 实现作为参考
 - 提交Issue询问问题
 - 加入讨论组交流
 

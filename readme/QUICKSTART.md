@@ -14,8 +14,8 @@
 #include <SD.h>
 
 #include "third_party/BinFontLib/BinFontLib.h"
-#include "third_party/BinFontLib/platforms/m5stack/M5FontPlatform.h"
-#include "third_party/BinFontLib/platforms/m5stack/M5FontRenderer.h"
+#include "third_party/BinFontLib/src/platform/M5FontPlatform.h"
+#include "third_party/BinFontLib/src/platform/M5FontRenderer.h"
 
 // 1) 创建对象
 M5FontPlatform platform;
@@ -158,7 +158,7 @@ Serial.printf("耗时: %.2f ms\n", stats.render_us/1000.0f);
 - [移植指南](PORTING.md)
 
 ## 示例代码
-查看 [examples/BinTestInteractive/](examples/BinTestInteractive/) 获取完整示例。
+查看 [examples/BinTestInteractive/](../examples/BinTestInteractive/) 获取完整示例。
 
 ---
 

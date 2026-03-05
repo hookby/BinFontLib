@@ -1,6 +1,6 @@
 // BinFontLib interactive demo (M5PaperS3)
 
-#include "../../BinTestApp.h"
+#include <BinTestApp.h>
 
 void setup() {
   BinTestApp_setup();

@@ -22,8 +22,8 @@
 
 ```cpp
 #include "third_party/BinFontLib/BinFontLib.h"
-#include "third_party/BinFontLib/platforms/m5stack/M5FontPlatform.h"
-#include "third_party/BinFontLib/platforms/m5stack/M5FontRenderer.h"
+#include "third_party/BinFontLib/src/platform/M5FontPlatform.h"
+#include "third_party/BinFontLib/src/platform/M5FontRenderer.h"
 ```
 
 ---
@@ -37,8 +37,8 @@
 #include <SD.h>
 
 #include "third_party/BinFontLib/BinFontLib.h"
-#include "third_party/BinFontLib/platforms/m5stack/M5FontPlatform.h"
-#include "third_party/BinFontLib/platforms/m5stack/M5FontRenderer.h"
+#include "third_party/BinFontLib/src/platform/M5FontPlatform.h"
+#include "third_party/BinFontLib/src/platform/M5FontRenderer.h"
 
 M5FontPlatform platform;
 BinFontRuntime fontRuntime(&platform);
@@ -338,7 +338,7 @@ M5FontRenderer renderer2(&fontRuntime2, &display);
 
 **需要帮助？**
 
-- 查看 [examples/](examples/) 目录中的示例代码
+- 查看 [examples/](../examples/) 目录中的示例代码
 - 提交 [Issue](https://github.com/hookby/BinFontLib/issues)
 - 阅读 [FAQ](https://github.com/hookby/BinFontLib/wiki/FAQ)
 

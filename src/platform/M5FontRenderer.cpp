@@ -10,7 +10,7 @@
   #define BINFONT_DEC_CACHE_MAX_BYTES (1024u * 1024u)
 #endif
 #ifndef BINFONT_CACHE_MAX_ENTRIES
-    #define BINFONT_CACHE_MAX_ENTRIES 256
+  #define BINFONT_CACHE_MAX_ENTRIES 256
 #endif
 
 struct CacheEntry {
@@ -27,6 +27,10 @@ static CacheEntry s_bmpCache[BINFONT_CACHE_MAX_ENTRIES];
 static CacheEntry s_decCache[BINFONT_CACHE_MAX_ENTRIES];
 static uint32_t s_bmpBytes = 0;
 static uint32_t s_decBytes = 0;
+
+// Runtime-tunable cache eviction limits.
+static uint32_t s_bmpMaxBytes = (uint32_t)BINFONT_BMP_CACHE_MAX_BYTES;
+static uint32_t s_decMaxBytes = (uint32_t)BINFONT_DEC_CACHE_MAX_BYTES;
 
 static uint32_t fnv1a32(const char* s) {
     uint32_t h = 2166136261u;
@@ -56,7 +60,6 @@ static uint32_t makeFontSig32(uint32_t pathHash, uint32_t fileSize32, uint32_t c
 }
 
 static uint64_t makeBmpKey(uint32_t fontSig32, uint32_t fileSize32, const GlyphEntryRaw& glyph) {
-    // Include per-font signature + fileSize + glyph fields.
     uint32_t h = 0;
     h ^= mix32((uint32_t)glyph.bmp_off);
     h ^= mix32((uint32_t)glyph.bmp_size);
@@ -120,7 +123,6 @@ static void cacheEnsureSpace(CacheEntry* arr, uint32_t& totalBytes, uint32_t max
     if (needBytes > maxBytes) return;
     while (totalBytes + needBytes > maxBytes) {
         cacheEvictOne(arr, totalBytes, platform, statsOrNull, isBmp);
-        // If nothing to evict, break.
         if (cacheFindLru(arr) < 0) break;
     }
 }
@@ -134,10 +136,18 @@ static void cacheClearAll(CacheEntry* arr, uint32_t& totalBytes, IBinFontPlatfor
     totalBytes = 0;
 }
 
-// Bitstream decoder (compatible with EasyReader):
-// '0'       -> q=15 (white)
-// '10'      -> q=0  (black)
-// '11xxxx'  -> q=0..15 (4-bit gray)
+static void cacheTrimToMax(CacheEntry* arr, uint32_t& totalBytes, uint32_t maxBytes, IBinFontPlatform* platform, bool isBmp) {
+    if (maxBytes == 0) {
+        cacheClearAll(arr, totalBytes, platform);
+        return;
+    }
+    while (totalBytes > maxBytes) {
+        const int lru = cacheFindLru(arr);
+        if (lru < 0) break;
+        cacheEvictOne(arr, totalBytes, platform, nullptr, isBmp);
+    }
+}
+
 struct BitReader {
     const uint8_t* data;
     size_t size;
@@ -170,11 +180,11 @@ struct BitReader {
     inline int decodeQ() {
         const int b0 = read1();
         if (b0 < 0) return -1;
-        if (b0 == 0) return 15; // white
+        if (b0 == 0) return 15;
 
         const int b1 = read1();
         if (b1 < 0) return -1;
-        if (b1 == 0) return 0;  // black
+        if (b1 == 0) return 0;
 
         return readBits(4);
     }
@@ -213,7 +223,6 @@ static bool decodeToNibbles(
     return true;
 }
 
-// 解码压缩的位图数据到nibbles
 static bool decodeGlyphBitmap(
     void* fileHandle,
     IBinFontPlatform* platform,
@@ -231,7 +240,6 @@ static bool decodeGlyphBitmap(
     const size_t needBytes = (pixels + 1) / 2;
     if (outBytes < needBytes) return false;
 
-    // 1) decoded cache
     const uint64_t decKey = makeDecKey(fontSig32, fileSize32, glyph);
     const int decIdx = cacheFind(s_decCache, decKey);
     if (decIdx >= 0 && s_decCache[decIdx].size == needBytes && s_decCache[decIdx].data) {
@@ -246,7 +254,6 @@ static bool decodeGlyphBitmap(
     }
     if (statsOrNull) statsOrNull->dec_cache_miss++;
 
-    // 2) bitmap cache
     const uint64_t bmpKey = makeBmpKey(fontSig32, fileSize32, glyph);
     const int bmpIdx = cacheFind(s_bmpCache, bmpKey);
     const uint8_t* bmpData = nullptr;
@@ -279,7 +286,6 @@ static bool decodeGlyphBitmap(
         bmpData = bmpOwned;
         bmpSize = (size_t)glyph.bmp_size;
 
-        // store bmp cache (takes ownership if stored)
         if ((uint32_t)glyph.bmp_size <= (uint32_t)BINFONT_BMP_CACHE_MAX_BYTES) {
             cacheEnsureSpace(s_bmpCache, s_bmpBytes, (uint32_t)BINFONT_BMP_CACHE_MAX_BYTES, (uint32_t)glyph.bmp_size, platform, statsOrNull, true);
             int freeIdx = cacheFindFree(s_bmpCache);
@@ -294,11 +300,11 @@ static bool decodeGlyphBitmap(
                 s_bmpCache[freeIdx].size = glyph.bmp_size;
                 s_bmpCache[freeIdx].lastUseMs = millis();
                 s_bmpBytes += glyph.bmp_size;
-                bmpOwned = nullptr; // ownership moved
+                bmpOwned = nullptr;
             }
         }
     }
-    
+
     const bool ok = decodeToNibbles(bmpData, bmpSize, glyph.bw, glyph.bh, outNibbles, outBytes, statsOrNull);
 
     if (ok && (uint32_t)needBytes <= (uint32_t)BINFONT_DEC_CACHE_MAX_BYTES) {
@@ -341,6 +347,274 @@ void M5FontRenderer::clearCaches() {
     IBinFontPlatform* p = _runtime->getPlatform();
     cacheClearAll(s_bmpCache, s_bmpBytes, p);
     cacheClearAll(s_decCache, s_decBytes, p);
+}
+
+void M5FontRenderer::setCacheLimits(M5FontRenderer::CacheLimits limits, bool trimNow) {
+    s_bmpMaxBytes = limits.bmpMaxBytes;
+    s_decMaxBytes = limits.decMaxBytes;
+    if (!trimNow || !_runtime || !_runtime->getPlatform()) return;
+    IBinFontPlatform* p = _runtime->getPlatform();
+    cacheTrimToMax(s_bmpCache, s_bmpBytes, s_bmpMaxBytes, p, true);
+    cacheTrimToMax(s_decCache, s_decBytes, s_decMaxBytes, p, false);
+}
+
+M5FontRenderer::CacheLimits M5FontRenderer::getCacheLimits() const {
+    return M5FontRenderer::CacheLimits{s_bmpMaxBytes, s_decMaxBytes};
+}
+
+RenderStats M5FontRenderer::prebakeGlyphsUtf8(const char* utf8Text, bool decodeToCache) {
+    RenderStats stats;
+    if (!_runtime || !_runtime->isReady() || !utf8Text) return stats;
+    IBinFontPlatform* p = _runtime->getPlatform();
+    if (!p) return stats;
+
+    void* fileHandle = _runtime->openFileHandle();
+    if (!fileHandle) {
+        stats.bmp_read_fail++;
+        return stats;
+    }
+
+    const uint32_t fileSize32 = (uint32_t)p->fileSize(fileHandle);
+    const uint32_t pathHash = fnv1a32(_runtime->getPath());
+    const uint32_t fontSig32 = makeFontSig32(
+        pathHash,
+        fileSize32,
+        (uint32_t)_runtime->getHeader().char_count,
+        (uint32_t)_runtime->getHeader().font_height
+    );
+
+    struct DecLimitGuard {
+        uint32_t prev;
+        bool active;
+        explicit DecLimitGuard(bool decodeToCache) : prev(0), active(!decodeToCache) {
+            if (active) {
+                prev = s_decMaxBytes;
+                s_decMaxBytes = 0;
+            }
+        }
+        ~DecLimitGuard() {
+            if (active) s_decMaxBytes = prev;
+        }
+    } guard(decodeToCache);
+
+    const char* cur = utf8Text;
+    while (true) {
+        const uint16_t cp = utf8DecodeNext(cur);
+        if (cp == 0) break;
+        stats.glyph_requests++;
+
+        GlyphEntryRaw glyph;
+        if (!_runtime->findGlyphWithHandle(fileHandle, cp, glyph)) {
+            stats.glyph_missing++;
+            continue;
+        }
+        stats.glyph_found++;
+
+        const size_t pixels = (size_t)glyph.bw * (size_t)glyph.bh;
+        const size_t needBytes = (pixels + 1) / 2;
+        if (needBytes == 0) continue;
+
+        uint8_t* nibbles = (uint8_t*)p->memAlloc(needBytes);
+        if (!nibbles) {
+            stats.decode_fail++;
+            continue;
+        }
+
+        (void)decodeGlyphBitmap(fileHandle, p, fontSig32, fileSize32, glyph, nibbles, needBytes, &stats);
+        p->memFree(nibbles);
+    }
+
+    _runtime->closeFileHandle(fileHandle);
+    return stats;
+}
+
+RenderStats M5FontRenderer::prebakeGlyphs(const uint16_t* codepoints, size_t count, bool decodeToCache) {
+    RenderStats stats;
+    if (!_runtime || !_runtime->isReady() || !codepoints || count == 0) return stats;
+    IBinFontPlatform* p = _runtime->getPlatform();
+    if (!p) return stats;
+
+    void* fileHandle = _runtime->openFileHandle();
+    if (!fileHandle) {
+        stats.bmp_read_fail++;
+        return stats;
+    }
+
+    const uint32_t fileSize32 = (uint32_t)p->fileSize(fileHandle);
+    const uint32_t pathHash = fnv1a32(_runtime->getPath());
+    const uint32_t fontSig32 = makeFontSig32(
+        pathHash,
+        fileSize32,
+        (uint32_t)_runtime->getHeader().char_count,
+        (uint32_t)_runtime->getHeader().font_height
+    );
+
+    struct DecLimitGuard {
+        uint32_t prev;
+        bool active;
+        explicit DecLimitGuard(bool decodeToCache) : prev(0), active(!decodeToCache) {
+            if (active) {
+                prev = s_decMaxBytes;
+                s_decMaxBytes = 0;
+            }
+        }
+        ~DecLimitGuard() {
+            if (active) s_decMaxBytes = prev;
+        }
+    } guard(decodeToCache);
+
+    for (size_t i = 0; i < count; i++) {
+        const uint16_t cp = codepoints[i];
+        if (cp == 0) continue;
+        stats.glyph_requests++;
+
+        GlyphEntryRaw glyph;
+        if (!_runtime->findGlyphWithHandle(fileHandle, cp, glyph)) {
+            stats.glyph_missing++;
+            continue;
+        }
+        stats.glyph_found++;
+
+        const size_t pixels = (size_t)glyph.bw * (size_t)glyph.bh;
+        const size_t needBytes = (pixels + 1) / 2;
+        if (needBytes == 0) continue;
+
+        uint8_t* nibbles = (uint8_t*)p->memAlloc(needBytes);
+        if (!nibbles) {
+            stats.decode_fail++;
+            continue;
+        }
+
+        (void)decodeGlyphBitmap(fileHandle, p, fontSig32, fileSize32, glyph, nibbles, needBytes, &stats);
+        p->memFree(nibbles);
+    }
+
+    _runtime->closeFileHandle(fileHandle);
+    return stats;
+}
+
+void M5FontRenderer::drawGlyphNibbles(
+    int x, int y,
+    const uint8_t* nibbles,
+    int width, int height,
+    int xOffset, int yOffset
+) {
+    if (!nibbles || !_display || width <= 0 || height <= 0) return;
+
+    const int drawX = x + xOffset;
+    const int drawY = y + yOffset;
+
+    uint16_t grayLut[16];
+    for (int q = 0; q < 16; q++) {
+        const uint8_t gray8 = (q * 255 + 7) / 15;
+        grayLut[q] = _display->color888(gray8, gray8, gray8);
+    }
+
+    for (int row = 0; row < height; row++) {
+        int col = 0;
+        while (col < width) {
+            const size_t idx = (size_t)row * (size_t)width + (size_t)col;
+            const uint8_t nibble = (idx & 1)
+                ? (nibbles[idx >> 1] & 0x0F)
+                : (nibbles[idx >> 1] >> 4);
+
+            const uint8_t q0 = quantizeGray(nibble);
+
+            if (q0 >= _whiteSkipQ) {
+                col++;
+                continue;
+            }
+
+            int run = 1;
+            while ((col + run) < width) {
+                const size_t nextIdx = (size_t)row * (size_t)width + (size_t)(col + run);
+                const uint8_t nextNibble = (nextIdx & 1)
+                    ? (nibbles[nextIdx >> 1] & 0x0F)
+                    : (nibbles[nextIdx >> 1] >> 4);
+                const uint8_t q1 = quantizeGray(nextNibble);
+                if (q1 != q0) break;
+                run++;
+            }
+
+            const uint16_t color = grayLut[q0];
+            _display->drawFastHLine(drawX + col, drawY + row, run, color);
+
+            col += run;
+        }
+    }
+}
+
+bool M5FontRenderer::drawGlyphNibblesFast(
+    int x, int y,
+    const uint8_t* nibbles,
+    int width, int height,
+    int xOffset, int yOffset,
+    uint16_t* framebuffer,
+    int fbWidth, int fbHeight
+) {
+    if (!nibbles || !framebuffer || width <= 0 || height <= 0) return false;
+
+    const int drawX = x + xOffset;
+    const int drawY = y + yOffset;
+
+    if (drawX >= fbWidth || drawY >= fbHeight) return true;
+    if (drawX + width <= 0 || drawY + height <= 0) return true;
+
+    uint16_t grayLut[16];
+    for (int q = 0; q < 16; q++) {
+        const uint8_t gray8 = (q * 255 + 7) / 15;
+        grayLut[q] = (_display) ? _display->color888(gray8, gray8, gray8) : 0;
+    }
+
+    for (int row = 0; row < height; row++) {
+        const int fbRow = drawY + row;
+        if (fbRow < 0 || fbRow >= fbHeight) continue;
+
+        uint16_t* fbLine = framebuffer + fbRow * fbWidth;
+
+        int col = 0;
+        while (col < width) {
+            const size_t idx = (size_t)row * (size_t)width + (size_t)col;
+            const uint8_t nibble = (idx & 1)
+                ? (nibbles[idx >> 1] & 0x0F)
+                : (nibbles[idx >> 1] >> 4);
+
+            const uint8_t q0 = quantizeGray(nibble);
+
+            if (q0 >= _whiteSkipQ) {
+                col++;
+                continue;
+            }
+
+            int run = 1;
+            while ((col + run) < width) {
+                const size_t nextIdx = (size_t)row * (size_t)width + (size_t)(col + run);
+                const uint8_t nextNibble = (nextIdx & 1)
+                    ? (nibbles[nextIdx >> 1] & 0x0F)
+                    : (nibbles[nextIdx >> 1] >> 4);
+                const uint8_t q1 = quantizeGray(nextNibble);
+                if (q1 != q0) break;
+                run++;
+            }
+
+            const int fbCol_start = drawX + col;
+            const int fbCol_end = drawX + col + run;
+
+            if (fbCol_end > 0 && fbCol_start < fbWidth) {
+                int start = fbCol_start < 0 ? 0 : fbCol_start;
+                int end = fbCol_end > fbWidth ? fbWidth : fbCol_end;
+
+                const uint16_t color = grayLut[q0];
+                for (int i = start; i < end; i++) {
+                    fbLine[i] = color;
+                }
+            }
+
+            col += run;
+        }
+    }
+
+    return true;
 }
 
 bool M5FontRenderer::decodeGlyphToNibbles(
@@ -440,16 +714,16 @@ RenderStats M5FontRenderer::drawText(
     bool enableWrap
 ) {
     RenderStats stats{};
-    
+
     if (!text || !_runtime || !_display) return stats;
     if (!_runtime->isReady()) return stats;
-    
+
     const uint32_t startTime = _runtime->getPlatform()->getMicros();
-    
+
     int cursorX = x;
     int cursorY = y;
     const int lineHeight = _runtime->getLineAdvance();
-    
+
     const char* ptr = text;
 
     void* fileHandle = _runtime->openFileHandle();
@@ -474,59 +748,55 @@ RenderStats M5FontRenderer::drawText(
     while (*ptr) {
         uint16_t cp = utf8DecodeNext(ptr);
         if (cp == 0) break;
-        
+
         stats.glyph_requests++;
-        
-        // 处理换行符
+
         if (cp == '\n') {
             cursorY += lineHeight;
             cursorX = x;
             if (cursorY >= y + height) break;
             continue;
         }
-        
-        // 查找字形
+
         GlyphEntryRaw glyph{};
         if (!_runtime->findGlyphWithHandle(fileHandle, cp, glyph)) {
             stats.glyph_missing++;
             continue;
         }
-        
+
         stats.glyph_found++;
-        
-        // 检查是否需要换行
+
         if (enableWrap && (cursorX + glyph.adv_w > x + width)) {
             cursorY += lineHeight;
             cursorX = x;
             stats.wraps++;
-            
+
             if (cursorY >= y + height) break;
         }
-        
-        // 解码并绘制字形
+
         if (glyph.bw > 0 && glyph.bh > 0) {
-            const size_t nibbleCount = (size_t)glyph.bw * glyph.bh;
+            const size_t nibbleCount = (size_t)glyph.bw * (size_t)glyph.bh;
             const size_t nibbleBytes = (nibbleCount + 1) / 2;
-            
+
             uint8_t* nibbles = (uint8_t*)_runtime->getPlatform()->memAllocInternal(nibbleBytes);
             if (nibbles) {
                 memset(nibbles, 0xFF, nibbleBytes);
-                
+
                 if (decodeGlyphBitmap(fileHandle, p, fontSig32, fileSize32, glyph, nibbles, nibbleBytes, &stats)) {
                     drawGlyphNibbles(cursorX, cursorY, nibbles, glyph.bw, glyph.bh, glyph.xo, glyph.yo);
                     stats.pixels_drawn += glyph.bw * glyph.bh;
                 }
-                
+
                 _runtime->getPlatform()->memFreeInternal(nibbles);
             }
         }
-        
+
         cursorX += glyph.adv_w;
     }
 
     endWrite();
     _runtime->closeFileHandle(fileHandle);
-    
+
     stats.render_us = _runtime->getPlatform()->getMicros() - startTime;
     return stats;
 }
@@ -539,25 +809,23 @@ RenderStats M5FontRenderer::drawTextToCanvas(
     bool enableWrap
 ) {
     RenderStats stats{};
-    
+
     if (!text || !_runtime) return stats;
     if (!_runtime->isReady()) return stats;
-    
-    // 获取Canvas的帧缓冲
+
     uint16_t* framebuffer = (uint16_t*)canvas.getBuffer();
     if (!framebuffer) {
-        // 回退到普通绘制
         return drawText(text, x, y, width, height, enableWrap);
     }
-    
+
     const int fbWidth = canvas.width();
     const int fbHeight = canvas.height();
     const uint32_t startTime = _runtime->getPlatform()->getMicros();
-    
+
     int cursorX = x;
     int cursorY = y;
     const int lineHeight = _runtime->getLineAdvance();
-    
+
     const char* ptr = text;
 
     void* fileHandle = _runtime->openFileHandle();
@@ -576,58 +844,57 @@ RenderStats M5FontRenderer::drawTextToCanvas(
         (uint32_t)_runtime->getHeader().char_count,
         (uint32_t)_runtime->getHeader().font_height
     );
-    
+
     while (*ptr) {
         uint16_t cp = utf8DecodeNext(ptr);
         if (cp == 0) break;
-        
+
         stats.glyph_requests++;
-        
+
         if (cp == '\n') {
             cursorY += lineHeight;
             cursorX = x;
             if (cursorY >= y + height) break;
             continue;
         }
-        
+
         GlyphEntryRaw glyph{};
         if (!_runtime->findGlyphWithHandle(fileHandle, cp, glyph)) {
             stats.glyph_missing++;
             continue;
         }
-        
+
         stats.glyph_found++;
-        
+
         if (enableWrap && (cursorX + glyph.adv_w > x + width)) {
             cursorY += lineHeight;
             cursorX = x;
             stats.wraps++;
-            
+
             if (cursorY >= y + height) break;
         }
-        
+
         if (glyph.bw > 0 && glyph.bh > 0) {
-            const size_t nibbleCount = (size_t)glyph.bw * glyph.bh;
+            const size_t nibbleCount = (size_t)glyph.bw * (size_t)glyph.bh;
             const size_t nibbleBytes = (nibbleCount + 1) / 2;
-            
+
             uint8_t* nibbles = (uint8_t*)_runtime->getPlatform()->memAllocInternal(nibbleBytes);
             if (nibbles) {
                 memset(nibbles, 0xFF, nibbleBytes);
-                
+
                 if (decodeGlyphBitmap(fileHandle, p, fontSig32, fileSize32, glyph, nibbles, nibbleBytes, &stats)) {
-                    // 使用快速路径直接写入Canvas帧缓冲
-                    drawGlyphNibblesFast(cursorX, cursorY, nibbles, glyph.bw, glyph.bh, 
-                                       glyph.xo, glyph.yo, framebuffer, fbWidth, fbHeight);
+                    drawGlyphNibblesFast(cursorX, cursorY, nibbles, glyph.bw, glyph.bh,
+                                         glyph.xo, glyph.yo, framebuffer, fbWidth, fbHeight);
                     stats.pixels_drawn += glyph.bw * glyph.bh;
                 }
-                
+
                 _runtime->getPlatform()->memFreeInternal(nibbles);
             }
         }
-        
+
         cursorX += glyph.adv_w;
     }
-    
+
     _runtime->closeFileHandle(fileHandle);
     stats.render_us = _runtime->getPlatform()->getMicros() - startTime;
     return stats;
