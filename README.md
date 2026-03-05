@@ -10,3 +10,6 @@ Documentation:
 
 Example:
 - examples/BinTestInteractive/
+
+  # Next
+  - I will change to PlatformIO for more posible.
